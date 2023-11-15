@@ -28,6 +28,7 @@ public class MyApplicationContext {
         String packagePath = basePackage.replaceAll("\\.", "/");
         File packageDir = new File(loader.getResource(packagePath).getFile());
 
+
         if (packageDir.isDirectory()) {
             Arrays.stream(packageDir.listFiles())
                     .filter(f -> f.isFile() && f.getName().endsWith(".class"))
@@ -158,4 +159,5 @@ public class MyApplicationContext {
             throw new RuntimeException(e);
         }
     }
+
 }

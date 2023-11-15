@@ -17,3 +17,17 @@ dependencies {
 test {
     useJUnitPlatform()
 }
+
+
+jar {
+    archivesBaseName = 'myjdbc-spec'
+    manifest {
+        attributes(
+                'Implementation-Title': 'MyJDBC Spec',
+                'Implementation-Version': '1.0'
+        )
+    }
+    from("src/main/java/edu/pnu/myjdbc/") {
+        include "spec/**"
+    }
+}
