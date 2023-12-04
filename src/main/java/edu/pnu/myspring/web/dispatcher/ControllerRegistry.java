@@ -2,6 +2,8 @@ package edu.pnu.myspring.web.dispatcher;
 
 import edu.pnu.myspring.annotations.MyRestController;
 import edu.pnu.myspring.core.MyApplicationContext;
+
+import java.lang.reflect.Field;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.Map;
@@ -12,19 +14,17 @@ public class ControllerRegistry {
     public ControllerRegistry(MyApplicationContext context) {
         try {
 
+            Field registryField = MyApplicationContext.class
+                    .getDeclaredField("beanRegistry");
+            registryField.setAccessible(true);
 
-            context.getClass()
-                    .getDeclaredField("beanRegistry")
-                    .setAccessible(true);
-            Map<Class<?>, Object> beanRegistry = (Map<Class<?>, Object>) context
-                    .getClass()
-                    .getDeclaredField("beanRegistry")
-                    .get(context);
+            Map<Class<?>, Object> registry = (Map<Class<?>, Object>) registryField.get(context);
 
-            beanRegistry.keySet()
+            registry.keySet()
                     .stream()
                     .filter(this::isController)
-                    .forEach(clazz -> registry.put(clazz, beanRegistry.get(clazz)));
+                    .forEach(clazz -> this.registry.put(clazz, registry.get(clazz)));
+
         } catch (NoSuchFieldException | IllegalAccessException e) {
             throw new RuntimeException(e);
         }
@@ -36,8 +36,7 @@ public class ControllerRegistry {
     }
 
     private boolean isController(Class<?> clazz){
-        return Arrays.stream(clazz.getDeclaredFields())
-                .anyMatch(field -> field.isAnnotationPresent(MyRestController.class));
+        return clazz.isAnnotationPresent(MyRestController.class);
 
     }
 }
