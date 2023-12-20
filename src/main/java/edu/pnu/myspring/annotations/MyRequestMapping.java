@@ -4,7 +4,7 @@ import java.lang.annotation.Retention;
 import java.lang.annotation.RetentionPolicy;
 
 @Retention(RetentionPolicy.RUNTIME)
-public @interface Mapping {
+public @interface MyRequestMapping {
     String method() default "GET";
     String value();
 

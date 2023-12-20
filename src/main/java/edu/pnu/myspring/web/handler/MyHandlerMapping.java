@@ -1,34 +1,55 @@
 package edu.pnu.myspring.web.handler;
 
-import edu.pnu.myspring.annotations.Mapping;
+import edu.pnu.myspring.annotations.MyRequestMapping;
+import edu.pnu.myspring.annotations.PathVariable;
+import edu.pnu.myspring.annotations.PostMapping;
 import edu.pnu.myspring.web.dispatcher.ControllerRegistry;
 import edu.pnu.myspring.web.http.UserRequest;
+
+import java.lang.reflect.Field;
 import java.lang.reflect.Method;
-import java.lang.reflect.Parameter;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
+
 
 public class MyHandlerMapping {
 
-    Map<Class<?>, Object> registry;
+    private Map<Class<?>, Object> registry;
     public MyHandlerMapping(ControllerRegistry registry) {
         this.registry = registry.getRegistry();
     }
 
+
+    public Object findInstanceOfController(String uri){
+        for (Class<?> clazz : registry.keySet()) {
+            Method[] declaredMethods = clazz.getDeclaredMethods();
+            for (Method declaredMethod : declaredMethods) {
+                if (declaredMethod.isAnnotationPresent(MyRequestMapping.class) ||
+                declaredMethod.isAnnotationPresent(PostMapping.class)){
+                    if (pathMatch(uri, declaredMethod)){
+                        return this.registry.get(clazz);
+                    }
+                }
+            }
+        }
+        return null;
+    }
     public Method getHandler(String method,String uri){
         List<Method> collect = registry.keySet()
                 .stream()
-                .filter(instance -> instance.isAnnotationPresent(Mapping.class))
                 .flatMap(instance -> Arrays.stream(instance.getDeclaredMethods()))
+                .filter(field -> field.isAnnotationPresent(MyRequestMapping.class)||
+                        field.isAnnotationPresent(PostMapping.class))
                 .filter(field -> pathMatch(uri, field))
                 .filter(field -> methodMatch(method, field))
                 .collect(Collectors.toList());
 
         if (collect.size() > 1){
-            throw new IllegalStateException("http  request에 대한 중복이 존재합니다.");
+            throw new IllegalStateException("http request에 대한 중복이 존재합니다.");
         }
 
         return collect.get(0);
@@ -36,9 +57,12 @@ public class MyHandlerMapping {
 
     public Map<String, String> extractPathVariables(UserRequest request){
         Map<String, String> map = new HashMap<>();
-        return extractPathVariable(findOriginUriByMethodAndUri(request.getMethod(), request.getUri()),
-                request.getUri(),
-                map);
+        Method handler = getHandler(request.getMethod(), request.getUri());
+        if (handler.isAnnotationPresent(MyRequestMapping.class)){
+            String origin = handler.getAnnotation(MyRequestMapping.class).value();
+            return extractPathVariable(origin,request.getUri(),map);
+        }
+        return map;
     }
 
 
@@ -58,54 +82,52 @@ public class MyHandlerMapping {
         if (postfixIdx == origin.length()-1){
             pathVariable = postfix;
         }
-        map.put(key, pathVariable.replaceAll("/", ""));
-
+        if (!pathVariable.replaceAll("/", "").isBlank()){
+            map.put(key, pathVariable.replaceAll("/", ""));
+        }
         return extractPathVariable(prefix+ pathVariable + origin.substring(postfixIdx+1)
                 ,uri
                 ,map);
     }
     public Object[] extractArgsForMethod(Method method, Map<String, Object> params){
-        Class<?>[] parameterTypes = method.getParameterTypes();
-        Object[] args = new Object[parameterTypes.length];
-        for (int i = 0; i < parameterTypes.length; i++) {
-            Class<?> paramType = parameterTypes[i];
-            String paramName = method.getParameters()[i].getName();
-            Object paramValue = params.get(paramName);
-            args[i] = convertToType(paramValue, paramType);
-        }
+        Object[] args = new Object[method.getParameters().length];
+        AtomicInteger idx = new AtomicInteger();
+        Arrays.stream(method.getParameters())
+                .sequential()
+                .filter(e -> e.isAnnotationPresent(PathVariable.class))
+                .map(e -> e.getAnnotation(PathVariable.class).value())
+                .forEach(e -> args[idx.getAndIncrement()] = params.get(e));
         return args;
     }
 
-    private static Object convertToType(Object value, Class<?> targetType) {
-        return targetType.cast(value);
-    }
 
 
 
-    private String findOriginUriByMethodAndUri(String method, String uri){
-        return registry.keySet()
-                .stream()
-                .filter(instance -> instance.isAnnotationPresent(Mapping.class))
-                .flatMap(instance -> Arrays.stream(instance.getDeclaredAnnotationsByType(Mapping.class)))
-                .filter(annotation -> annotation.method().equals(method))
-                .filter(annotation -> annotation.value().equals(uri))
-                .map(Mapping::value)
-                .collect(Collectors.toList())
-                .get(0);
-    }
 
-    private static boolean pathMatch(String uri, Method method){
+
+    private boolean pathMatch(String uri, Method method){
         method.setAccessible(true);
 
-         return Arrays.stream(method.getAnnotationsByType(Mapping.class))
-                 .anyMatch(annotation -> uri.matches(annotation.value()
-                         .replaceAll("\\{[^}]*\\}",".*")));
+        boolean flag = Arrays.stream(method.getAnnotationsByType(MyRequestMapping.class))
+                .anyMatch(annotation -> uri.matches(annotation.value()
+                        .replaceAll("\\{[^}]*\\}", ".*")));
+
+        if (flag) return true;
+
+       return Arrays.stream(method.getAnnotationsByType(PostMapping.class))
+                .anyMatch(annotation -> uri.matches(annotation.value()
+                        .replaceAll("\\{[^}]*\\}", ".*")));
+
     }
 
     private boolean methodMatch(String HttpMethod, Method method){
         method.setAccessible(true);
 
-        return Arrays.stream(method.getAnnotationsByType(Mapping.class))
+        boolean flag = Arrays.stream(method.getAnnotationsByType(MyRequestMapping.class))
+                .anyMatch(annotation -> annotation.method().equals(HttpMethod));
+        if (flag) return true;
+
+        return Arrays.stream(method.getAnnotationsByType(PostMapping.class))
                 .anyMatch(annotation -> annotation.method().equals(HttpMethod));
     }
 }
